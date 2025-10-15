@@ -1,14 +1,51 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:handlecrash/domain/models/vehicle.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:camera/camera.dart';
-import 'homepage.dart';
-import 'emergency.dart';
-import 'external_link.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_gemini/flutter_gemini.dart';
+import 'presentation/providers.dart';
+import 'presentation/auth/auth_wrapper.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables
+  await dotenv.load(fileName: ".env");
+
+  // Initialize Supabase
+  await Supabase.initialize(
+    url: dotenv.env['SUPABASE_URL']!,
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+  );
+
+  // Initialize Gemini
+  final geminiKey = dotenv.env['GEMINI_API_KEY'];
+  if (geminiKey != null && geminiKey.isNotEmpty) {
+    Gemini.init(apiKey: geminiKey);
+    debugPrint('Gemini inicializado correctamente');
+  } else {
+    debugPrint('GEMINI_API_KEY ausente; el chat de imagen se deshabilitará.');
+  }
+
+  // Initialize Hive
+  await Hive.initFlutter();
+  Hive.registerAdapter(VehicleAdapter()); // Registers the VehicleAdapter for Hive
+  final vehicleBox = await Hive.openBox<Vehicle>('vehicles');
+
   final cameras = await availableCameras();
   final firstCamera = cameras.first;
-  runApp(MyApp(camera: firstCamera));
+
+  runApp(
+    ProviderScope(
+      overrides: [
+        vehicleBoxProvider.overrideWithValue(vehicleBox),
+      ],
+      child: MyApp(camera: firstCamera),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -20,146 +57,143 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'HandleCrash',
+      debugShowCheckedModeBanner: false, // Quita el banner de debug
       theme: ThemeData(
+        useMaterial3: true,
         brightness: Brightness.dark,
-        primaryColor: Color(0xFFA8DADC),
-        scaffoldBackgroundColor: Colors.black,
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.black,
-          foregroundColor: Color(0xFFA8DADC),
+        
+        // Color scheme oscuro moderno
+        colorScheme: ColorScheme.dark(
+          primary: const Color(0xFF00D9FF), // Cyan vibrante
+          secondary: const Color(0xFF7C4DFF), // Púrpura vibrante
+          tertiary: const Color(0xFFFF6B9D), // Rosa vibrante
+          surface: const Color(0xFF1A1A1A), // Gris oscuro para superficies
+          surfaceContainer: const Color(0xFF242424), // Contenedores
+          onPrimary: Colors.black,
+          onSecondary: Colors.white,
+          onSurface: const Color(0xFFE8E8E8),
+          error: const Color(0xFFFF5252),
         ),
-        bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          backgroundColor: Colors.black,
-          selectedItemColor: Color(0xFFA8DADC),
-          unselectedItemColor: Colors.grey,
+        
+        scaffoldBackgroundColor: const Color(0xFF121212),
+        
+        // AppBar moderno
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF1A1A1A),
+          elevation: 0,
+          centerTitle: true,
+          titleTextStyle: TextStyle(
+            color: Color(0xFFE8E8E8),
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
+          ),
+          iconTheme: IconThemeData(color: Color(0xFF00D9FF)),
+        ),
+        
+        // Cards modernas
+        cardTheme: CardThemeData(
+          color: const Color(0xFF1A1A1A),
+          elevation: 4,
+          shadowColor: Colors.black.withOpacity(0.3),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        
+        // Bottom Navigation Bar
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: Color(0xFF1A1A1A),
+          selectedItemColor: Color(0xFF00D9FF),
+          unselectedItemColor: Color(0xFF6B6B6B),
+          type: BottomNavigationBarType.fixed,
+          elevation: 8,
+          selectedLabelStyle: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+          ),
+          unselectedLabelStyle: TextStyle(
+            fontWeight: FontWeight.w400,
+            fontSize: 11,
+          ),
+        ),
+        
+        // Botones elevados
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF00D9FF),
+            foregroundColor: Colors.black,
+            elevation: 2,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        
+        // Text buttons
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF00D9FF),
+            textStyle: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        
+        // Inputs
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF242424),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF3A3A3A)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF3A3A3A)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF00D9FF), width: 2),
+          ),
+          labelStyle: const TextStyle(color: Color(0xFF9E9E9E)),
+          hintStyle: const TextStyle(color: Color(0xFF6B6B6B)),
+        ),
+        
+        // FABs
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: Color(0xFF00D9FF),
+          foregroundColor: Colors.black,
+          elevation: 6,
+        ),
+        
+        // Dividers
+        dividerTheme: const DividerThemeData(
+          color: Color(0xFF3A3A3A),
+          thickness: 1,
+        ),
+        
+        // Snackbars
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: const Color(0xFF242424),
+          contentTextStyle: const TextStyle(color: Color(0xFFE8E8E8)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          behavior: SnackBarBehavior.floating,
         ),
       ),
-      home: HomePage(camera: camera),
+      home: AuthWrapper(camera: camera),
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  final CameraDescription camera;
 
-  const HomePage({super.key, required this.camera});
 
-  @override
-  _HomePageState createState() => _HomePageState();
-}
-
-class _HomePageState extends State<HomePage> {
-  int _selectedIndex = 0;
-
-  late List<Widget> _widgetOptions;
-
-  @override
-  void initState() {
-    super.initState();
-    _widgetOptions = <Widget>[
-      Homepage(onNavigate: (int index) => _onItemTapped(index)),
-      CameraScreen(camera: widget.camera),
-      Emergency(),
-      ExternalLink(),
-    ];
-  }
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: _widgetOptions.elementAt(_selectedIndex),
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Inicio',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.camera),
-            label: 'Cámara',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.call),
-            label: 'Emergencia',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.link),
-            label: 'Enlace',
-          ),
-        ],
-        currentIndex: _selectedIndex,
-        onTap: _onItemTapped,
-      ),
-    );
-  }
-}
-
-class CameraScreen extends StatefulWidget {
-  final CameraDescription camera;
-
-  const CameraScreen({super.key, required this.camera});
-
-  @override
-  _CameraScreenState createState() => _CameraScreenState();
-}
-
-class _CameraScreenState extends State<CameraScreen> {
-  late CameraController _controller;
-  late Future<void> _initializeControllerFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = CameraController(
-      widget.camera,
-      ResolutionPreset.medium,
-    );
-    _initializeControllerFuture = _controller.initialize();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: FutureBuilder<void>(
-        future: _initializeControllerFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
-            return CameraPreview(_controller);
-          } else {
-            return Center(child: CircularProgressIndicator());
-          }
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Color(0xFFA8DADC),
-        foregroundColor: Colors.black,
-        child: Icon(Icons.camera),
-        onPressed: () async {
-          try {
-            await _initializeControllerFuture;
-            final image = await _controller.takePicture();
-            // For now, just print the path
-            print('Picture taken: ${image.path}');
-            // Later, send to AI
-          } catch (e) {
-            print(e);
-          }
-        },
-      ),
-    );
-  }
-}
